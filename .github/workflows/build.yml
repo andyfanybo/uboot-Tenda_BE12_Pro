@@ -161,10 +161,10 @@ jobs:
       - name: Checkout 代码
         uses: actions/checkout@v4
 
-      - name: 安装交叉编译工具链
+      - name: 安装编译依赖
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq gcc-aarch64-linux-gnu python3
+          sudo apt-get install -y -qq gcc-aarch64-linux-gnu python3 device-tree-compiler
 
       - name: 编译 ${{ matrix.soc }}_${{ matrix.board }}
         run: |
