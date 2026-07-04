@@ -3,24 +3,63 @@ name: Build BL-MT798x Firmware
 on:
   workflow_dispatch:
     inputs:
-      soc:
-        description: '选择 SOC 平台'
+      target:
+        description: '选择编译目标'
         required: true
         type: choice
+        default: 'all'
         options:
-          - all
-          - mt7981
-          - mt7986
-          - mt7987
-          - mt7988
-        default: all
-      board:
-        description: '指定 Board 名称（all = 编译所选 SOC 下全部机型，也可填入具体 board 名）'
-        required: false
-        type: string
-        default: all
+          # ─── 全部 ───
+          - 'all'
+          # ─── MT7981 ───
+          - 'mt7981:360t7'
+          - 'mt7981:abt_asr3000'
+          - 'mt7981:ax3000t'
+          - 'mt7981:ax3000t_an8855'
+          - 'mt7981:cetron_ct3003'
+          - 'mt7981:clt_r30b1'
+          - 'mt7981:cmcc_a10'
+          - 'mt7981:cmcc_rax3000m'
+          - 'mt7981:cmcc_rax3000m-emmc'
+          - 'mt7981:cmcc_xr30'
+          - 'mt7981:cmcc_xr30-emmc'
+          - 'mt7981:cudy_tr3000-v1'
+          - 'mt7981:glinet_gl-mt2500'
+          - 'mt7981:glinet_gl-mt3000'
+          - 'mt7981:h3c_magic-nx30-pro'
+          - 'mt7981:honor_fur-602'
+          - 'mt7981:imou_lc-hx3001'
+          - 'mt7981:jcg_q30'
+          - 'mt7981:konka_komi-a31'
+          - 'mt7981:livinet_zr-3020'
+          - 'mt7981:newland_nl-wr8103'
+          - 'mt7981:newland_nl-wr9103'
+          - 'mt7981:nokia_ea0326gmp'
+          - 'mt7981:openembed_som7981'
+          - 'mt7981:rfb_spim_nand'
+          - 'mt7981:ruijie_rg-x30e'
+          - 'mt7981:ruijie_rg-x30e-pro'
+          - 'mt7981:wr30u'
+          # ─── MT7986 ───
+          - 'mt7986:glinet_gl-mt6000'
+          - 'mt7986:jdcloud_re-cp-03'
+          - 'mt7986:netcore_n60'
+          - 'mt7986:netcore_n60-pro'
+          - 'mt7986:redmi_ax6000'
+          - 'mt7986:rfb_spim_nand'
+          - 'mt7986:ruijie_ew-6000gx-pro'
+          - 'mt7986:ruijie_rg-x60'
+          - 'mt7986:ruijie_rg-x60-pro'
+          - 'mt7986:tplink_tl-xdr608x'
+          - 'mt7986:tplink_tl-xtr8488'
+          - 'mt7986:zyxel_ex5700'
+          # ─── MT7987 ───
+          - 'mt7987:airpi_h5000m'
+          - 'mt7987:tenda_be12-pro'
+          # ─── MT7988 ───
+          - 'mt7988:rfb_spim_nand'
       multilayout:
-        description: '启用 MULTI_LAYOUT 多分区模式'
+        description: '启用 MULTI_LAYOUT 多分区模式（仅部分机型支持）'
         type: boolean
         default: false
 
@@ -38,8 +77,7 @@ jobs:
       - name: 生成编译矩阵
         id: set-matrix
         run: |
-          SOC_INPUT="${{ inputs.soc }}"
-          BOARD_INPUT="${{ inputs.board }}"
+          TARGET="${{ inputs.target }}"
 
           ATF_DIR="atf-20240117-bacca82a8"
           UBOOT_OLD="uboot-mtk-20230718-09eda825"
@@ -55,40 +93,43 @@ jobs:
           items=()
           count=0
 
-          for atf_config in "$ATF_DIR"/configs/mt798*_*_defconfig; do
-            [ -f "$atf_config" ] || continue
-            filename=$(basename "$atf_config" _defconfig)
-            soc="${filename%%_*}"
-            board="${filename#*_}"
+          add_target() {
+            local soc="$1" board="$2"
+            local uboot_dir=$(get_uboot_dir "$soc")
+            local atf_config="$ATF_DIR/configs/${soc}_${board}_defconfig"
+            local uboot_config="$uboot_dir/configs/${soc}_${board}_defconfig"
 
-            # 跳过非目标 SOC
-            if [ "$SOC_INPUT" != "all" ] && [ "$SOC_INPUT" != "$soc" ]; then
-              continue
+            if [ -f "$atf_config" ] && [ -f "$uboot_config" ]; then
+              items+=("{\"soc\":\"$soc\",\"board\":\"$board\"}")
+              count=$((count + 1))
+            else
+              echo "::warning::跳过 ${soc}_${board}：缺少 ATF 或 U-Boot 配置"
             fi
+          }
 
-            # BOARD 过滤
-            if [ "$BOARD_INPUT" != "all" ] && [ "$BOARD_INPUT" != "$board" ]; then
-              continue
-            fi
+          if [ "$TARGET" = "all" ]; then
+            echo "==> 扫描全部有效编译目标..."
+            for atf_config in "$ATF_DIR"/configs/mt798*_*_defconfig; do
+              [ -f "$atf_config" ] || continue
+              filename=$(basename "$atf_config" _defconfig)
+              soc="${filename%%_*}"
+              board="${filename#*_}"
 
-            # 跳过 multi_layout 变体（通过 multilayout 输入控制）
-            case "$board" in
-              *multi_layout*) continue ;;
-            esac
+              # 跳过 multi_layout 变体
+              case "$board" in *multi_layout*) continue ;; esac
 
-            # 验证对应 U-Boot defconfig 存在
-            uboot_dir=$(get_uboot_dir "$soc")
-            uboot_config="$uboot_dir/configs/${soc}_${board}_defconfig"
-            if [ ! -f "$uboot_config" ]; then
-              continue
-            fi
-
-            items+=("{\"soc\":\"$soc\",\"board\":\"$board\"}")
-            count=$((count + 1))
-          done
+              add_target "$soc" "$board"
+            done
+          else
+            # 解析 soc:board 格式
+            soc="${TARGET%%:*}"
+            board="${TARGET#*:}"
+            echo "==> 编译目标: SOC=$soc BOARD=$board"
+            add_target "$soc" "$board"
+          fi
 
           if [ "$count" -eq 0 ]; then
-            echo "::error::未找到匹配的编译目标！SOC=$SOC_INPUT BOARD=$BOARD_INPUT"
+            echo "::error::未找到匹配的编译目标！TARGET=$TARGET"
             exit 1
           fi
 
@@ -156,7 +197,6 @@ jobs:
           echo "| SOC | Board | 状态 |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-----|-------|------|" >> "$GITHUB_STEP_SUMMARY"
 
-          # 检查 build 结果
           if [ "${{ needs.build.result }}" = "success" ]; then
             echo "| - | - | ✅ 全部编译成功 |" >> "$GITHUB_STEP_SUMMARY"
           elif [ "${{ needs.build.result }}" = "failure" ]; then
