@@ -185,25 +185,54 @@ jobs:
           retention-days: 30
 
   summary:
-    name: 编译汇总
+    name: 编译汇总 & 发布
     needs: [prepare, build]
     if: always()
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: 汇总结果
         run: |
           echo "## BL-MT798x 编译结果" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| SOC | Board | 状态 |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|-----|-------|------|" >> "$GITHUB_STEP_SUMMARY"
 
           if [ "${{ needs.build.result }}" = "success" ]; then
-            echo "| - | - | ✅ 全部编译成功 |" >> "$GITHUB_STEP_SUMMARY"
+            echo "✅ **全部编译成功**" >> "$GITHUB_STEP_SUMMARY"
           elif [ "${{ needs.build.result }}" = "failure" ]; then
-            echo "| - | - | ❌ 存在编译失败 |" >> "$GITHUB_STEP_SUMMARY"
+            echo "❌ **存在编译失败**，请查看上方日志" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "| - | - | ⏭️ 已跳过 |" >> "$GITHUB_STEP_SUMMARY"
+            echo "⏭️ 已跳过" >> "$GITHUB_STEP_SUMMARY"
           fi
 
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "请前往 [Actions 页面](../../actions/runs/${{ github.run_id }}) 下载构建产物。" >> "$GITHUB_STEP_SUMMARY"
+      - name: 下载全部构建产物
+        if: ${{ needs.build.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          path: release/
+          merge-multiple: true
+
+      - name: 列出产物文件
+        if: ${{ needs.build.result == 'success' }}
+        run: |
+          echo "产物文件列表:"
+          ls -lh release/
+
+      - name: 发布到 GitHub Releases
+        if: ${{ needs.build.result == 'success' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Build #${{ github.run_number }} (${{ github.ref_name }})
+          body: |
+            ## 编译信息
+            - **目标**: ${{ inputs.target }}
+            - **MULTI_LAYOUT**: ${{ inputs.multilayout && '是' || '否' }}
+            - **提交**: ${{ github.sha }}
+            - **时间**: ${{ github.event.repository.updated_at }}
+
+            ## 产物文件
+            点击下方链接下载对应机型的 FIP/BL2 固件。
+          files: release/*
+          draft: false
+          make_latest: true
