@@ -1,11 +1,8 @@
 // SPDX-License-Identifier: (GPL-2.0 OR MIT)
-/*
- * Author: Developer X <dev@x-wrt.com>
- */
 
 /dts-v1/;
 #include "mt7987a.dtsi"
-#include "mt7987-pinctrl.dtsi"
+#include "mt7987-spim-nand.dtsi"
 #include <dt-bindings/input/input.h>
 
 / {
@@ -36,39 +33,10 @@
 			debounce-interval = <10>;
 		};
 	};
-
-	gpio-leds {
-		compatible = "gpio-leds";
-
-		led_status_green: status_green {
-			function = LED_FUNCTION_STATUS;
-			color = <LED_COLOR_ID_GREEN>;
-			gpios = <&pio 6 GPIO_ACTIVE_LOW>;
-		};
-
-		led_status_red: status_red {
-			function = LED_FUNCTION_STATUS;
-			color = <LED_COLOR_ID_RED>;
-			gpios = <&pio 7 GPIO_ACTIVE_LOW>;
-		};
-	};
 };
 
 &spi0 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&spi0_flash_pins>;
-	status = "okay";
-
 	flash@0 {
-		compatible = "spi-nand";
-		reg = <0>;
-		spi-max-frequency = <52000000>;
-		spi-tx-bus-width = <4>;
-		spi-rx-bus-width = <4>;
-		mediatek,nmbm;
-		mediatek,bmt-max-ratio = <1>;
-		mediatek,bmt-max-reserved-blocks = <64>;
-
 		partitions {
 			compatible = "fixed-partitions";
 			#address-cells = <1>;
@@ -104,11 +72,6 @@
 				label = "ubi";
 				reg = <0x0d80000 0x5a00000>;
 				compatible = "linux,ubi";
-				volumes {
-					ubi_rootfs: ubi-volume-fit {
-						volname = "firmware";
-					};
-				};
 			};
 		};
 	};
