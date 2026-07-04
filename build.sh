@@ -17,9 +17,10 @@ if [ -z "$SOC" ] || [ -z "$BOARD" ]; then
 	exit 1
 fi
 
-# MT7987 uses newer U-Boot tree
+# MT7987 uses newer U-Boot and ATF trees
 if [ "$SOC" = "mt7987" ]; then
 	UBOOT_DIR=uboot-mtk-20250711
+	ATF_DIR=atf-20250711
 fi
 
 # Check if Python is installed on the system
