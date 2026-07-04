@@ -1,0 +1,169 @@
+name: Build BL-MT798x Firmware
+
+on:
+  workflow_dispatch:
+    inputs:
+      soc:
+        description: '选择 SOC 平台'
+        required: true
+        type: choice
+        options:
+          - all
+          - mt7981
+          - mt7986
+          - mt7987
+          - mt7988
+        default: all
+      board:
+        description: '指定 Board 名称（all = 编译所选 SOC 下全部机型，也可填入具体 board 名）'
+        required: false
+        type: string
+        default: all
+      multilayout:
+        description: '启用 MULTI_LAYOUT 多分区模式'
+        type: boolean
+        default: false
+
+jobs:
+  prepare:
+    name: 准备编译矩阵
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      count: ${{ steps.set-matrix.outputs.count }}
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 生成编译矩阵
+        id: set-matrix
+        run: |
+          SOC_INPUT="${{ inputs.soc }}"
+          BOARD_INPUT="${{ inputs.board }}"
+
+          ATF_DIR="atf-20240117-bacca82a8"
+          UBOOT_OLD="uboot-mtk-20230718-09eda825"
+          UBOOT_NEW="uboot-mtk-20250711"
+
+          get_uboot_dir() {
+            case "$1" in
+              mt7987) echo "$UBOOT_NEW" ;;
+              *) echo "$UBOOT_OLD" ;;
+            esac
+          }
+
+          items=()
+          count=0
+
+          for atf_config in "$ATF_DIR"/configs/mt798*_*_defconfig; do
+            [ -f "$atf_config" ] || continue
+            filename=$(basename "$atf_config" _defconfig)
+            soc="${filename%%_*}"
+            board="${filename#*_}"
+
+            # 跳过非目标 SOC
+            if [ "$SOC_INPUT" != "all" ] && [ "$SOC_INPUT" != "$soc" ]; then
+              continue
+            fi
+
+            # BOARD 过滤
+            if [ "$BOARD_INPUT" != "all" ] && [ "$BOARD_INPUT" != "$board" ]; then
+              continue
+            fi
+
+            # 跳过 multi_layout 变体（通过 multilayout 输入控制）
+            case "$board" in
+              *multi_layout*) continue ;;
+            esac
+
+            # 验证对应 U-Boot defconfig 存在
+            uboot_dir=$(get_uboot_dir "$soc")
+            uboot_config="$uboot_dir/configs/${soc}_${board}_defconfig"
+            if [ ! -f "$uboot_config" ]; then
+              continue
+            fi
+
+            items+=("{\"soc\":\"$soc\",\"board\":\"$board\"}")
+            count=$((count + 1))
+          done
+
+          if [ "$count" -eq 0 ]; then
+            echo "::error::未找到匹配的编译目标！SOC=$SOC_INPUT BOARD=$BOARD_INPUT"
+            exit 1
+          fi
+
+          # 生成 JSON 矩阵
+          matrix_json='{"include":['
+          for i in "${!items[@]}"; do
+            if [ "$i" -gt 0 ]; then
+              matrix_json+=','
+            fi
+            matrix_json+="${items[$i]}"
+          done
+          matrix_json+=']}'
+
+          echo "matrix=$matrix_json" >> "$GITHUB_OUTPUT"
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          echo "编译目标数量: $count"
+          echo "矩阵: $matrix_json"
+
+  build:
+    name: 编译 ${{ matrix.soc }}_${{ matrix.board }}
+    needs: prepare
+    if: ${{ needs.prepare.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+    steps:
+      - name: Checkout 代码
+        uses: actions/checkout@v4
+
+      - name: 安装交叉编译工具链
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq gcc-aarch64-linux-gnu python3
+
+      - name: 编译 ${{ matrix.soc }}_${{ matrix.board }}
+        run: |
+          echo "============================================"
+          echo "编译目标: SOC=${{ matrix.soc }} BOARD=${{ matrix.board }}"
+          echo "MULTI_LAYOUT=${{ inputs.multilayout && '1' || '0' }}"
+          echo "============================================"
+          export SOC="${{ matrix.soc }}"
+          export BOARD="${{ matrix.board }}"
+          export MULTI_LAYOUT="${{ inputs.multilayout && '1' || '0' }}"
+          bash build.sh
+
+      - name: 上传构建产物 (${{ matrix.soc }}_${{ matrix.board }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.soc }}_${{ matrix.board }}
+          path: output/
+          retention-days: 30
+
+  summary:
+    name: 编译汇总
+    needs: [prepare, build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 汇总结果
+        run: |
+          echo "## BL-MT798x 编译结果" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| SOC | Board | 状态 |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-----|-------|------|" >> "$GITHUB_STEP_SUMMARY"
+
+          # 检查 build 结果
+          if [ "${{ needs.build.result }}" = "success" ]; then
+            echo "| - | - | ✅ 全部编译成功 |" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ needs.build.result }}" = "failure" ]; then
+            echo "| - | - | ❌ 存在编译失败 |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| - | - | ⏭️ 已跳过 |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "请前往 [Actions 页面](../../actions/runs/${{ github.run_id }}) 下载构建产物。" >> "$GITHUB_STEP_SUMMARY"

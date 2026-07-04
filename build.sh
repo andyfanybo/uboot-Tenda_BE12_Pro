@@ -7,13 +7,19 @@ UBOOT_DIR=uboot-mtk-20230718-09eda825
 ATF_DIR=atf-20240117-bacca82a8
 
 if [ -z "$SOC" ] || [ -z "$BOARD" ]; then
-	echo "Usage: SOC=[mt7981|mt7986] BOARD=<board name> MULTI_LAYOUT=[0|1] $0"
+	echo "Usage: SOC=[mt7981|mt7986|mt7987] BOARD=<board name> MULTI_LAYOUT=[0|1] $0"
 	echo "eg: SOC=mt7981 BOARD=360t7 $0"
 	echo "eg: SOC=mt7981 BOARD=wr30u MULTI_LAYOUT=1 $0"
 	echo "eg: SOC=mt7981 BOARD=cmcc_rax3000m-emmc $0"
 	echo "eg: SOC=mt7986 BOARD=redmi_ax6000 MULTI_LAYOUT=1 $0"
 	echo "eg: SOC=mt7986 BOARD=jdcloud_re-cp-03 $0"
+	echo "eg: SOC=mt7987 BOARD=tenda_be12-pro $0"
 	exit 1
+fi
+
+# MT7987 uses newer U-Boot tree
+if [ "$SOC" = "mt7987" ]; then
+	UBOOT_DIR=uboot-mtk-20250711
 fi
 
 # Check if Python is installed on the system
